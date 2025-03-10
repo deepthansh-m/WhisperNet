@@ -59,4 +59,9 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(platform("com.google.firebase:firebase-bom:33.10.0"))
     implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-auth:23.0.0")
+    implementation("com.google.android.gms:play-services-location:21.2.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("com.android.billingclient:billing-ktx:7.0.0") // For IAP
+    implementation("com.google.android.gms:play-services-ads:23.0.0") // AdMob
 }
