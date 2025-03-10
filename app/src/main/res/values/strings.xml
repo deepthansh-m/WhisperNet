@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">WhisperNet</string>
+    <string name="app_name">Whisper Net</string>
+    <string name="premium_sku">whispernet_premium_monthly</string>
 </resources>
