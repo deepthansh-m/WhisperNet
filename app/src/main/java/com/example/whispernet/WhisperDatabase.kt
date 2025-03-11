@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 
 data class Whisper(
     val id: Long,
+    val userId: String, // Firebase UID of the poster
     val text: String,
     val latitude: Double,
     val longitude: Double,
@@ -21,15 +22,16 @@ data class Whisper(
     val loveCount: Int,
     val laughCount: Int,
     val prayCount: Int,
-    val theme: String, // "default", "soft_blue", "fiery_red"
+    val theme: String,
     val isPriority: Boolean
 )
 
-class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB", null, 1) {
+class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB", null, 2) { // Bump version to 2
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE whispers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
                 text TEXT,
                 latitude REAL,
                 longitude REAL,
@@ -55,9 +57,10 @@ class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB",
         onCreate(db)
     }
 
-    fun addWhisper(text: String, latitude: Double, longitude: Double, theme: String, isPriority: Boolean): Long {
+    fun addWhisper(userId: String, text: String, latitude: Double, longitude: Double, theme: String, isPriority: Boolean): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
+            put("user_id", userId)
             put("text", text)
             put("latitude", latitude)
             put("longitude", longitude)
@@ -96,6 +99,7 @@ class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB",
                 whispers.add(
                     Whisper(
                         id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
+                        userId = cursor.getString(cursor.getColumnIndexOrThrow("user_id")),
                         text = cursor.getString(cursor.getColumnIndexOrThrow("text")),
                         latitude = wLat,
                         longitude = wLon,
@@ -119,6 +123,43 @@ class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB",
         cursor.close()
         db.close()
         return whispers.sortedWith(compareByDescending<Whisper> { it.isPriority }.thenByDescending { it.timestamp })
+    }
+
+    fun getUserWhispers(userId: String): List<Whisper> {
+        val db = readableDatabase
+        val oneHourAgo = System.currentTimeMillis() - (60 * 60 * 1000)
+        val cursor = db.rawQuery("""
+            SELECT * FROM whispers WHERE user_id = ? AND timestamp > ?
+        """, arrayOf(userId, oneHourAgo.toString()))
+
+        val whispers = mutableListOf<Whisper>()
+        while (cursor.moveToNext()) {
+            whispers.add(
+                Whisper(
+                    id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
+                    userId = cursor.getString(cursor.getColumnIndexOrThrow("user_id")),
+                    text = cursor.getString(cursor.getColumnIndexOrThrow("text")),
+                    latitude = cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
+                    longitude = cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
+                    timestamp = cursor.getLong(cursor.getColumnIndexOrThrow("timestamp")),
+                    heartCount = cursor.getInt(cursor.getColumnIndexOrThrow("heart_count")),
+                    thumbCount = cursor.getInt(cursor.getColumnIndexOrThrow("thumb_count")),
+                    smileCount = cursor.getInt(cursor.getColumnIndexOrThrow("smile_count")),
+                    partyCount = cursor.getInt(cursor.getColumnIndexOrThrow("party_count")),
+                    cryCount = cursor.getInt(cursor.getColumnIndexOrThrow("cry_count")),
+                    wowCount = cursor.getInt(cursor.getColumnIndexOrThrow("wow_count")),
+                    angryCount = cursor.getInt(cursor.getColumnIndexOrThrow("angry_count")),
+                    loveCount = cursor.getInt(cursor.getColumnIndexOrThrow("love_count")),
+                    laughCount = cursor.getInt(cursor.getColumnIndexOrThrow("laugh_count")),
+                    prayCount = cursor.getInt(cursor.getColumnIndexOrThrow("pray_count")),
+                    theme = cursor.getString(cursor.getColumnIndexOrThrow("theme")),
+                    isPriority = cursor.getInt(cursor.getColumnIndexOrThrow("is_priority")) == 1
+                )
+            )
+        }
+        cursor.close()
+        db.close()
+        return whispers
     }
 
     fun addReaction(whisperId: Long, reactionType: String) {

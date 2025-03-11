@@ -3,6 +3,7 @@ package com.example.whispernet
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -17,6 +18,7 @@ import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.google.firebase.auth.FirebaseAuth
 import com.example.whispernet.databinding.ActivityFeedBinding
 
 class FeedActivity : AppCompatActivity() {
@@ -24,15 +26,23 @@ class FeedActivity : AppCompatActivity() {
     private lateinit var db: WhisperDatabase
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var billingManager: BillingManager
+    private lateinit var auth: FirebaseAuth
     private val LOCATION_PERMISSION_REQUEST_CODE = 1
     private var selectedTheme = "default"
     private var radiusKm = 2.0
+    private val TAG = "FeedActivity"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        binding = ActivityFeedBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        try {
+            binding = ActivityFeedBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inflate layout: ${e.message}")
+            Toast.makeText(this, "UI Error: Check Logcat", Toast.LENGTH_LONG).show()
+            return
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -43,12 +53,21 @@ class FeedActivity : AppCompatActivity() {
         db = WhisperDatabase(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         billingManager = BillingManager(this) { updateFeed() }
+        auth = FirebaseAuth.getInstance()
 
-        MobileAds.initialize(this) {}
-        if (!billingManager.isPremium()) {
-            binding.adView.loadAd(AdRequest.Builder().build())
-        } else {
-            binding.adView.visibility = View.GONE
+        try {
+            MobileAds.initialize(this) {
+                Log.d(TAG, "AdMob initialized")
+                if (!billingManager.isPremium()) {
+                    binding.adView.loadAd(AdRequest.Builder().build())
+                    Log.d(TAG, "Ad loaded for free user")
+                } else {
+                    binding.adView.visibility = View.GONE
+                    Log.d(TAG, "Ad hidden for premium user")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "AdMob initialization failed: ${e.message}")
         }
 
         binding.whisperRecyclerView.layoutManager = LinearLayoutManager(this)
@@ -87,6 +106,7 @@ class FeedActivity : AppCompatActivity() {
                     "Fiery Red" -> "fiery_red"
                     else -> "default"
                 }
+                Log.d(TAG, "Theme selected: $selectedTheme")
             }
 
             override fun onNothingSelected(parent: AdapterView<*>) {
@@ -100,6 +120,7 @@ class FeedActivity : AppCompatActivity() {
             binding.radiusSeekBar.isEnabled = false
             binding.radiusSeekBar.progress = 3 // 2 km
             binding.radiusText.text = "Radius: 2 km"
+            radiusKm = 2.0
         } else {
             binding.radiusSeekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
@@ -111,37 +132,53 @@ class FeedActivity : AppCompatActivity() {
                 override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
             })
+            binding.radiusSeekBar.progress = 3 // Default 2 km
+            radiusKm = 2.0
         }
     }
 
     private fun getLocationAndPost(text: String, theme: String, isPriority: Boolean) {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+            Log.d(TAG, "Requesting location permission")
             return
         }
         fusedLocationClient.lastLocation.addOnSuccessListener { location ->
             if (location != null) {
-                db.addWhisper(text, location.latitude, location.longitude, theme, isPriority)
+                val userId = auth.currentUser?.uid ?: return@addOnSuccessListener
+                db.addWhisper(userId, text, location.latitude, location.longitude, theme, isPriority)
                 binding.whisperEditText.text.clear()
                 updateFeed()
+                Log.d(TAG, "Whisper posted by $userId: $text")
             } else {
                 Toast.makeText(this, "Location unavailable", Toast.LENGTH_SHORT).show()
+                Log.w(TAG, "Location null")
             }
+        }.addOnFailureListener { e ->
+            Log.e(TAG, "Location fetch failed: ${e.message}")
+            Toast.makeText(this, "Location error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun updateFeed() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "Location permission not granted, skipping feed update")
             return
         }
         fusedLocationClient.lastLocation.addOnSuccessListener { location ->
             if (location != null) {
+                val userId = auth.currentUser?.uid ?: return@addOnSuccessListener
                 val whispers = db.getNearbyWhispers(location.latitude, location.longitude, radiusKm)
-                binding.whisperRecyclerView.adapter = WhisperAdapter(whispers, { whisperId, reactionType ->
+                binding.whisperRecyclerView.adapter = WhisperAdapter(whispers, userId, { whisperId, reactionType ->
                     db.addReaction(whisperId, reactionType)
                     updateFeed()
                 }, billingManager.isPremium())
+                Log.d(TAG, "Feed updated with ${whispers.size} whispers")
+            } else {
+                Log.w(TAG, "Location null during feed update")
             }
+        }.addOnFailureListener { e ->
+            Log.e(TAG, "Feed update failed: ${e.message}")
         }
     }
 
@@ -150,6 +187,8 @@ class FeedActivity : AppCompatActivity() {
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             val text = binding.whisperEditText.text.toString().trim()
             if (text.isNotEmpty()) getLocationAndPost(text, selectedTheme, binding.priorityCheckBox.isChecked)
+            updateFeed()
+            Log.d(TAG, "Location permission granted")
         }
     }
 }

@@ -14,6 +14,7 @@ class ProfileActivity : AppCompatActivity() {
     private lateinit var binding: ActivityProfileBinding
     private lateinit var db: WhisperDatabase
     private lateinit var billingManager: BillingManager
+    private lateinit var auth: FirebaseAuth
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +30,7 @@ class ProfileActivity : AppCompatActivity() {
 
         db = WhisperDatabase(this)
         billingManager = BillingManager(this) { updateProfile() }
+        auth = FirebaseAuth.getInstance()
         binding.profileRecyclerView.layoutManager = LinearLayoutManager(this)
         updateProfile()
 
@@ -42,14 +44,15 @@ class ProfileActivity : AppCompatActivity() {
         }
 
         binding.logoutButton.setOnClickListener {
-            FirebaseAuth.getInstance().signOut()
+            auth.signOut()
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
         }
     }
 
     private fun updateProfile() {
-        val whispers = db.getNearbyWhispers(0.0, 0.0, Double.MAX_VALUE) // All whispers for user
+        val userId = auth.currentUser?.uid ?: return
+        val whispers = db.getUserWhispers(userId)
         val activeCount = whispers.size
         val totalReactions = whispers.sumOf { it.heartCount + it.thumbCount + it.smileCount + it.partyCount + it.cryCount + it.wowCount + it.angryCount + it.loveCount + it.laughCount + it.prayCount }
         binding.activeWhispersText.text = "Active Whispers: $activeCount"
@@ -72,6 +75,6 @@ class ProfileActivity : AppCompatActivity() {
             val smile = whispers.sumOf { it.smileCount }
             binding.reactionBreakdownText.text = "Breakdown: ❤️ $heart, 👍 $thumb, 😊 $smile"
         }
-        binding.profileRecyclerView.adapter = WhisperAdapter(whispers, { _, _ -> }, billingManager.isPremium())
+        binding.profileRecyclerView.adapter = WhisperAdapter(whispers, userId, { _, _ -> }, billingManager.isPremium())
     }
 }

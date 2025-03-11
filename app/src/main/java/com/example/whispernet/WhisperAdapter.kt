@@ -8,12 +8,13 @@ import com.example.whispernet.databinding.ItemWhisperBinding
 
 class WhisperAdapter(
     private val whispers: List<Whisper>,
+    private val currentUserId: String, // Add current user's UID
     private val onReactionClick: (Long, String) -> Unit,
     private val isPremium: Boolean
 ) : RecyclerView.Adapter<WhisperAdapter.WhisperViewHolder>() {
 
     class WhisperViewHolder(val binding: ItemWhisperBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(whisper: Whisper, onReactionClick: (Long, String) -> Unit, isPremium: Boolean) {
+        fun bind(whisper: Whisper, currentUserId: String, onReactionClick: (Long, String) -> Unit, isPremium: Boolean) {
             binding.whisperText.text = whisper.text
             when (whisper.theme) {
                 "soft_blue" -> binding.whisperText.setBackgroundColor(binding.root.context.getColor(R.color.soft_blue))
@@ -23,9 +24,16 @@ class WhisperAdapter(
             binding.heartButton.text = "❤️ ${whisper.heartCount}"
             binding.thumbButton.text = "👍 ${whisper.thumbCount}"
             binding.smileButton.text = "😊 ${whisper.smileCount}"
-            binding.heartButton.setOnClickListener { onReactionClick(whisper.id, "heart") }
-            binding.thumbButton.setOnClickListener { onReactionClick(whisper.id, "thumb") }
-            binding.smileButton.setOnClickListener { onReactionClick(whisper.id, "smile") }
+
+            val isOwnWhisper = whisper.userId == currentUserId
+            binding.heartButton.isEnabled = !isOwnWhisper
+            binding.thumbButton.isEnabled = !isOwnWhisper
+            binding.smileButton.isEnabled = !isOwnWhisper
+            if (!isOwnWhisper) {
+                binding.heartButton.setOnClickListener { onReactionClick(whisper.id, "heart") }
+                binding.thumbButton.setOnClickListener { onReactionClick(whisper.id, "thumb") }
+                binding.smileButton.setOnClickListener { onReactionClick(whisper.id, "smile") }
+            }
 
             if (isPremium) {
                 binding.partyButton.visibility = View.VISIBLE
@@ -42,13 +50,22 @@ class WhisperAdapter(
                 binding.loveButton.text = "💖 ${whisper.loveCount}"
                 binding.laughButton.text = "😂 ${whisper.laughCount}"
                 binding.prayButton.text = "🙏 ${whisper.prayCount}"
-                binding.partyButton.setOnClickListener { onReactionClick(whisper.id, "party") }
-                binding.cryButton.setOnClickListener { onReactionClick(whisper.id, "cry") }
-                binding.wowButton.setOnClickListener { onReactionClick(whisper.id, "wow") }
-                binding.angryButton.setOnClickListener { onReactionClick(whisper.id, "angry") }
-                binding.loveButton.setOnClickListener { onReactionClick(whisper.id, "love") }
-                binding.laughButton.setOnClickListener { onReactionClick(whisper.id, "laugh") }
-                binding.prayButton.setOnClickListener { onReactionClick(whisper.id, "pray") }
+                binding.partyButton.isEnabled = !isOwnWhisper
+                binding.cryButton.isEnabled = !isOwnWhisper
+                binding.wowButton.isEnabled = !isOwnWhisper
+                binding.angryButton.isEnabled = !isOwnWhisper
+                binding.loveButton.isEnabled = !isOwnWhisper
+                binding.laughButton.isEnabled = !isOwnWhisper
+                binding.prayButton.isEnabled = !isOwnWhisper
+                if (!isOwnWhisper) {
+                    binding.partyButton.setOnClickListener { onReactionClick(whisper.id, "party") }
+                    binding.cryButton.setOnClickListener { onReactionClick(whisper.id, "cry") }
+                    binding.wowButton.setOnClickListener { onReactionClick(whisper.id, "wow") }
+                    binding.angryButton.setOnClickListener { onReactionClick(whisper.id, "angry") }
+                    binding.loveButton.setOnClickListener { onReactionClick(whisper.id, "love") }
+                    binding.laughButton.setOnClickListener { onReactionClick(whisper.id, "laugh") }
+                    binding.prayButton.setOnClickListener { onReactionClick(whisper.id, "pray") }
+                }
             } else {
                 binding.partyButton.visibility = View.GONE
                 binding.cryButton.visibility = View.GONE
@@ -67,7 +84,7 @@ class WhisperAdapter(
     }
 
     override fun onBindViewHolder(holder: WhisperViewHolder, position: Int) {
-        holder.bind(whispers[position], onReactionClick, isPremium)
+        holder.bind(whispers[position], currentUserId, onReactionClick, isPremium)
     }
 
     override fun getItemCount(): Int = whispers.size
