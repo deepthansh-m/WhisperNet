@@ -3,21 +3,25 @@ package com.example.whispernet
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.google.firebase.auth.FirebaseAuth
 import com.example.whispernet.databinding.ActivityProfileBinding
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ListenerRegistration
 
 class ProfileActivity : AppCompatActivity() {
     private lateinit var binding: ActivityProfileBinding
-    private lateinit var db: WhisperDatabase
-    private lateinit var billingManager: BillingManager
     private lateinit var auth: FirebaseAuth
+    private lateinit var billingManager: BillingManager
+    private lateinit var firestoreManager: FirestorePostManager
+    private var listener: ListenerRegistration? = null
+    private val TAG = "ProfileActivity"
 
-    @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -25,24 +29,22 @@ class ProfileActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(sys.left, sys.top, sys.right, sys.bottom)
             insets
         }
 
-        db = WhisperDatabase(this)
-        billingManager = BillingManager(this) { updateProfile() }
         auth = FirebaseAuth.getInstance()
+        firestoreManager = FirestorePostManager()
+        billingManager = BillingManager(this) { /* premium callback */ }
+
         binding.profileRecyclerView.layoutManager = LinearLayoutManager(this)
-        updateProfile()
 
         if (billingManager.isPremium()) {
             binding.premiumButton.isEnabled = false
             binding.premiumButton.text = "Premium Active"
         } else {
-            binding.premiumButton.setOnClickListener {
-                billingManager.launchBillingFlow(this)
-            }
+            binding.premiumButton.setOnClickListener { billingManager.launchBillingFlow(this) }
         }
 
         binding.logoutButton.setOnClickListener {
@@ -52,32 +54,62 @@ class ProfileActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        subscribeToMyWhispers()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        listener?.remove()
+    }
+
+    private fun subscribeToMyWhispers() {
+        val uid = auth.currentUser?.uid ?: return
+        val oneHourAgo = System.currentTimeMillis() - 3_600_000
+
+        listener = firestoreManager.listenNearbyWhispers(0.0, 0.0, Double.MAX_VALUE) { list ->
+            val mine = list.filter { it.userId == uid && it.timestamp > oneHourAgo }
+            updateProfileUI(mine)
+        }
+    }
+
     @SuppressLint("SetTextI18n")
-    private fun updateProfile() {
-        val userId = auth.currentUser?.uid ?: return
-        val whispers = db.getUserWhispers(userId)
+    private fun updateProfileUI(whispers: List<Whisper>) {
         val activeCount = whispers.size
-        val totalReactions = whispers.sumOf { it.heartCount + it.thumbCount + it.smileCount + it.partyCount + it.cryCount + it.wowCount + it.angryCount + it.loveCount + it.laughCount + it.prayCount }
+        val totalReactions = whispers.sumOf {
+            it.heartCount + it.thumbCount + it.smileCount + it.partyCount +
+                    it.cryCount + it.wowCount + it.angryCount +
+                    it.loveCount + it.laughCount + it.prayCount
+        }
         binding.activeWhispersText.text = "Active Whispers: $activeCount"
         binding.reactionCountText.text = "Reactions: $totalReactions"
-        if (billingManager.isPremium()) {
-            val heart = whispers.sumOf { it.heartCount }
-            val thumb = whispers.sumOf { it.thumbCount }
-            val smile = whispers.sumOf { it.smileCount }
-            val party = whispers.sumOf { it.partyCount }
-            val cry = whispers.sumOf { it.cryCount }
-            val wow = whispers.sumOf { it.wowCount }
-            val angry = whispers.sumOf { it.angryCount }
-            val love = whispers.sumOf { it.loveCount }
-            val laugh = whispers.sumOf { it.laughCount }
-            val pray = whispers.sumOf { it.prayCount }
-            binding.reactionBreakdownText.text = "Breakdown: ❤️ $heart, 👍 $thumb, 😊 $smile, 🎉 $party, 😢 $cry, 😮 $wow, 😡 $angry, 💖 $love, 😂 $laugh, 🙏 $pray"
+
+        val breakdown = if (billingManager.isPremium()) {
+            "❤️ ${whispers.sumOf { it.heartCount }}, " +
+                    "👍 ${whispers.sumOf { it.thumbCount }}, " +
+                    "😊 ${whispers.sumOf { it.smileCount }}, " +
+                    "🎉 ${whispers.sumOf { it.partyCount }}, " +
+                    "😢 ${whispers.sumOf { it.cryCount }}, " +
+                    "😮 ${whispers.sumOf { it.wowCount }}, " +
+                    "😡 ${whispers.sumOf { it.angryCount }}, " +
+                    "💖 ${whispers.sumOf { it.loveCount }}, " +
+                    "😂 ${whispers.sumOf { it.laughCount }}, " +
+                    "🙏 ${whispers.sumOf { it.prayCount }}"
         } else {
-            val heart = whispers.sumOf { it.heartCount }
-            val thumb = whispers.sumOf { it.thumbCount }
-            val smile = whispers.sumOf { it.smileCount }
-            binding.reactionBreakdownText.text = "Breakdown: ❤️ $heart, 👍 $thumb, 😊 $smile"
+            "❤️ ${whispers.sumOf { it.heartCount }}, " +
+                    "👍 ${whispers.sumOf { it.thumbCount }}, " +
+                    "😊 ${whispers.sumOf { it.smileCount }}"
         }
-        binding.profileRecyclerView.adapter = WhisperAdapter(whispers, userId, { _, _ -> }, billingManager.isPremium())
+        binding.reactionBreakdownText.text = "Breakdown: $breakdown"
+
+        binding.profileRecyclerView.adapter = WhisperAdapter(
+            whispers,
+            auth.currentUser?.uid ?: "",
+            onReactionClick = { _, _ -> Toast.makeText(this, "Can't react here", Toast.LENGTH_SHORT).show() },
+            isPremium = billingManager.isPremium()
+        )
+
+        Log.d(TAG, "Profile updated, whispers=${whispers.size}")
     }
 }

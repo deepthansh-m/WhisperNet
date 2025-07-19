@@ -3,6 +3,7 @@ package com.example.whispernet
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -15,20 +16,24 @@ import androidx.core.app.ActivityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.whispernet.databinding.ActivityFeedBinding
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.firebase.auth.FirebaseAuth
-import com.example.whispernet.databinding.ActivityFeedBinding
+import com.google.firebase.firestore.ListenerRegistration
 
 class FeedActivity : AppCompatActivity() {
     private lateinit var binding: ActivityFeedBinding
-    private lateinit var db: WhisperDatabase
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var billingManager: BillingManager
     private lateinit var auth: FirebaseAuth
-    private val LOCATION_PERMISSION_REQUEST_CODE = 1
+    private lateinit var firestoreManager: FirestorePostManager
+    private var whispersListener: ListenerRegistration? = null
+
+    private val LOCATION_REQ = 42
     private var selectedTheme = "default"
     private var radiusKm = 2.0
     private val TAG = "FeedActivity"
@@ -36,54 +41,36 @@ class FeedActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        try {
-            binding = ActivityFeedBinding.inflate(layoutInflater)
-            setContentView(binding.root)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to inflate layout: ${e.message}")
-            Toast.makeText(this, "UI Error: Check Logcat", Toast.LENGTH_LONG).show()
-            return
-        }
+        binding = ActivityFeedBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(sys.left, sys.top, sys.right, sys.bottom)
             insets
         }
 
-        db = WhisperDatabase(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        billingManager = BillingManager(this) { updateFeed() }
+        billingManager = BillingManager(this) { refreshFeed() }
         auth = FirebaseAuth.getInstance()
+        firestoreManager = FirestorePostManager()
 
-        try {
-            MobileAds.initialize(this) {
-                Log.d(TAG, "AdMob initialized")
-                if (!billingManager.isPremium()) {
-                    binding.adView.loadAd(AdRequest.Builder().build())
-                    Log.d(TAG, "Ad loaded for free user")
-                } else {
-                    binding.adView.visibility = View.GONE
-                    Log.d(TAG, "Ad hidden for premium user")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "AdMob initialization failed: ${e.message}")
-        }
+        MobileAds.initialize(this)
+        if (!billingManager.isPremium()) binding.adView.loadAd(AdRequest.Builder().build()) else binding.adView.visibility = View.GONE
 
         binding.whisperRecyclerView.layoutManager = LinearLayoutManager(this)
         setupThemeSpinner()
         setupRadiusSeekBar()
-        updateFeed()
+        refreshFeed()
 
         binding.postButton.setOnClickListener {
-            val text = binding.whisperEditText.text.toString().trim()
-            if (text.isNotEmpty() && text.length <= 140) {
-                val isPriority = billingManager.isPremium() && binding.priorityCheckBox.isChecked
-                getLocationAndPost(text, selectedTheme, isPriority)
-            } else {
-                Toast.makeText(this, "Enter a whisper (1-140 chars)", Toast.LENGTH_SHORT).show()
+            val txt = binding.whisperEditText.text.toString().trim()
+            if (txt.isEmpty() || txt.length > 140) {
+                Toast.makeText(this, "Enter a whisper (1–140 chars)", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            val priority = billingManager.isPremium() && binding.priorityCheckBox.isChecked
+            getCurrentLocation { loc -> postWhisper(txt, priority, loc) }
         }
 
         binding.profileButton.setOnClickListener {
@@ -92,27 +79,19 @@ class FeedActivity : AppCompatActivity() {
     }
 
     private fun setupThemeSpinner() {
-        val themes = if (billingManager.isPremium()) {
-            arrayOf("Default", "Soft Blue", "Fiery Red")
-        } else {
-            arrayOf("Default")
+        val themes = if (billingManager.isPremium()) arrayOf("Default", "Soft Blue", "Fiery Red") else arrayOf("Default")
+        binding.themeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, themes).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, themes)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.themeSpinner.adapter = adapter
         binding.themeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-                selectedTheme = when (themes[position]) {
+            override fun onItemSelected(p: AdapterView<*>, v: View?, pos: Int, id: Long) {
+                selectedTheme = when (themes[pos]) {
                     "Soft Blue" -> "soft_blue"
                     "Fiery Red" -> "fiery_red"
                     else -> "default"
                 }
-                Log.d(TAG, "Theme selected: $selectedTheme")
             }
-
-            override fun onNothingSelected(parent: AdapterView<*>) {
-                selectedTheme = "default"
-            }
+            override fun onNothingSelected(p: AdapterView<*>) { selectedTheme = "default" }
         }
     }
 
@@ -120,77 +99,112 @@ class FeedActivity : AppCompatActivity() {
     private fun setupRadiusSeekBar() {
         if (!billingManager.isPremium()) {
             binding.radiusSeekBar.isEnabled = false
-            binding.radiusSeekBar.progress = 3 // 2 km
+            binding.radiusSeekBar.progress = 3
             binding.radiusText.text = "Radius: 2 km"
-            radiusKm = 2.0
         } else {
             binding.radiusSeekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                    radiusKm = 0.5 + (progress * 0.5)
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, f: Boolean) {
+                    radiusKm = 0.5 + p * 0.5
                     binding.radiusText.text = "Radius: $radiusKm km"
-                    updateFeed()
+                    refreshFeed()
                 }
-
-                override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
             })
-            binding.radiusSeekBar.progress = 3 // Default 2 km
-            radiusKm = 2.0
+            binding.radiusSeekBar.progress = 3
         }
     }
 
-    private fun getLocationAndPost(text: String, theme: String, isPriority: Boolean) {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
-            Log.d(TAG, "Requesting location permission")
+    private fun getCurrentLocation(callback: (Location) -> Unit) {
+        if (!checkPerm()) return
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
             return
         }
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            if (location != null) {
-                val userId = auth.currentUser?.uid ?: return@addOnSuccessListener
-                db.addWhisper(userId, text, location.latitude, location.longitude, theme, isPriority)
-                binding.whisperEditText.text.clear()
-                updateFeed()
-                Log.d(TAG, "Whisper posted by $userId: $text")
-            } else {
-                Toast.makeText(this, "Location unavailable", Toast.LENGTH_SHORT).show()
-                Log.w(TAG, "Location null")
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            .addOnSuccessListener { loc ->
+                if (loc != null) callback(loc)
+                else Toast.makeText(this, "Location unavailable", Toast.LENGTH_SHORT).show()
             }
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "Location fetch failed: ${e.message}")
-            Toast.makeText(this, "Location error: ${e.message}", Toast.LENGTH_SHORT).show()
+            .addOnFailureListener { e ->
+                Toast.makeText(this, "Location error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun postWhisper(text: String, isPriority: Boolean, loc: Location) {
+        val uid = auth.currentUser?.uid ?: return
+        val whisper = Whisper(
+            userId = uid,
+            text = text,
+            latitude = loc.latitude,
+            longitude = loc.longitude,
+            timestamp = System.currentTimeMillis(),
+            theme = selectedTheme,
+            isPriority = isPriority
+        )
+        firestoreManager.postWhisper(whisper) {
+            if (it) {
+                binding.whisperEditText.setText("")
+                refreshFeed()
+            }
         }
     }
 
-    private fun updateFeed() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "Location permission not granted, skipping feed update")
-            return
-        }
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            if (location != null) {
-                val userId = auth.currentUser?.uid ?: return@addOnSuccessListener
-                val whispers = db.getNearbyWhispers(location.latitude, location.longitude, radiusKm)
-                binding.whisperRecyclerView.adapter = WhisperAdapter(whispers, userId, { whisperId, reactionType ->
-                    db.addReaction(whisperId, reactionType)
-                    updateFeed()
-                }, billingManager.isPremium())
-                Log.d(TAG, "Feed updated with ${whispers.size} whispers")
-            } else {
-                Log.w(TAG, "Location null during feed update")
-            }
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "Feed update failed: ${e.message}")
+    private fun refreshFeed() {
+        getCurrentLocation { loc -> attachListener(loc.latitude, loc.longitude) }
+    }
+
+    private fun attachListener(lat: Double, lon: Double) {
+        val uid = auth.currentUser?.uid ?: return
+        whispersListener?.remove()
+        whispersListener = firestoreManager.listenNearbyWhispers(lat, lon, radiusKm) { list ->
+            binding.whisperRecyclerView.adapter = WhisperAdapter(
+                list,
+                uid,
+                onReactionClick = { w, field ->
+                    if (w.userId != uid) firestoreManager.addReaction(w.docId, field)
+                    else Toast.makeText(this, "Can't react to own post", Toast.LENGTH_SHORT).show()
+                },
+                isPremium = billingManager.isPremium()
+            )
+            Log.d(TAG, "Feed update ${list.size} whispers @($lat,$lon)")
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            val text = binding.whisperEditText.text.toString().trim()
-            if (text.isNotEmpty()) getLocationAndPost(text, selectedTheme, binding.priorityCheckBox.isChecked)
-            updateFeed()
-            Log.d(TAG, "Location permission granted")
+    private fun checkPerm(): Boolean {
+        val granted = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_REQ
+            )
         }
+        return granted
+    }
+
+    override fun onRequestPermissionsResult(req: Int, perms: Array<out String>, res: IntArray) {
+        super.onRequestPermissionsResult(req, perms, res)
+        if (req == LOCATION_REQ && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) {
+            refreshFeed()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        whispersListener?.remove()
     }
 }

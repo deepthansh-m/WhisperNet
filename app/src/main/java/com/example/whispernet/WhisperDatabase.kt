@@ -10,24 +10,25 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 data class Whisper(
-    val id: Long,
-    val userId: String, // Firebase UID of the poster
-    val text: String,
-    val latitude: Double,
-    val longitude: Double,
-    val timestamp: Long,
-    val heartCount: Int,
-    val thumbCount: Int,
-    val smileCount: Int,
-    val partyCount: Int,
-    val cryCount: Int,
-    val wowCount: Int,
-    val angryCount: Int,
-    val loveCount: Int,
-    val laughCount: Int,
-    val prayCount: Int,
-    val theme: String,
-    val isPriority: Boolean
+    val docId: String = "",
+    val id: Long = 0L,
+    val userId: String = "",
+    val text: String = "",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val timestamp: Long = 0L,
+    val heartCount: Int = 0,
+    val thumbCount: Int = 0,
+    val smileCount: Int = 0,
+    val partyCount: Int = 0,
+    val cryCount: Int = 0,
+    val wowCount: Int = 0,
+    val angryCount: Int = 0,
+    val loveCount: Int = 0,
+    val laughCount: Int = 0,
+    val prayCount: Int = 0,
+    val theme: String = "default",
+    val isPriority: Boolean = false
 )
 
 class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB", null, 2) { // Bump version to 2
@@ -157,7 +158,7 @@ class WhisperDatabase(context: Context) : SQLiteOpenHelper(context, "WhisperDB",
                     laughCount = cursor.getInt(cursor.getColumnIndexOrThrow("laugh_count")),
                     prayCount = cursor.getInt(cursor.getColumnIndexOrThrow("pray_count")),
                     theme = cursor.getString(cursor.getColumnIndexOrThrow("theme")),
-                    isPriority = cursor.getInt(cursor.getColumnIndexOrThrow("is_priority")) == 1
+                    isPriority = cursor.getInt(cursor.getColumnIndexOrThrow("is_priority")) == 1,
                 )
             )
         }

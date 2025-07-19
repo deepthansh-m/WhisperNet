@@ -64,4 +64,5 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.android.billingclient:billing-ktx:7.0.0") // For IAP
     implementation("com.google.android.gms:play-services-ads:23.0.0") // AdMob
+    implementation("com.google.firebase:firebase-firestore-ktx")
 }
