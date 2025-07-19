@@ -1,5 +1,6 @@
 package com.example.whispernet
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
@@ -16,6 +17,7 @@ class ProfileActivity : AppCompatActivity() {
     private lateinit var billingManager: BillingManager
     private lateinit var auth: FirebaseAuth
 
+    @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -50,6 +52,7 @@ class ProfileActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("SetTextI18n")
     private fun updateProfile() {
         val userId = auth.currentUser?.uid ?: return
         val whispers = db.getUserWhispers(userId)

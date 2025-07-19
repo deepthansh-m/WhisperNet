@@ -1,5 +1,6 @@
 package com.example.whispernet
 
+import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +15,7 @@ class WhisperAdapter(
 ) : RecyclerView.Adapter<WhisperAdapter.WhisperViewHolder>() {
 
     class WhisperViewHolder(val binding: ItemWhisperBinding) : RecyclerView.ViewHolder(binding.root) {
+        @SuppressLint("SetTextI18n")
         fun bind(whisper: Whisper, currentUserId: String, onReactionClick: (Long, String) -> Unit, isPremium: Boolean) {
             binding.whisperText.text = whisper.text
             when (whisper.theme) {

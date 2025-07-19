@@ -1,39 +1,39 @@
+@file:Suppress("DEPRECATION")
+
 package com.example.whispernet
 
 import android.app.Activity
 import android.content.Context
 import android.widget.Toast
+import androidx.core.content.edit
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingFlowParams
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.Purchase
-import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.SkuDetails
 import com.android.billingclient.api.SkuDetailsParams
 
 class BillingManager(private val context: Context, private val onPremiumPurchased: () -> Unit) {
-    private val billingClient: BillingClient
+    private val billingClient: BillingClient = BillingClient.newBuilder(context)
+        .setListener { billingResult, purchases ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
+                for (purchase in purchases) {
+                    if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+                        val prefs =
+                            context.getSharedPreferences("WhisperPrefs", Context.MODE_PRIVATE)
+                        prefs.edit { putBoolean("isPremium", true) }
+                        onPremiumPurchased()
+                        Toast.makeText(context, "Premium unlocked!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        .enablePendingPurchases()
+        .build()
     private var skuDetails: SkuDetails? = null
 
     init {
-        billingClient = BillingClient.newBuilder(context)
-            .setListener(object : PurchasesUpdatedListener {
-                override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
-                        for (purchase in purchases) {
-                            if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-                                val prefs = context.getSharedPreferences("WhisperPrefs", Context.MODE_PRIVATE)
-                                prefs.edit().putBoolean("isPremium", true).apply()
-                                onPremiumPurchased()
-                                Toast.makeText(context, "Premium unlocked!", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                }
-            })
-            .enablePendingPurchases()
-            .build()
 
         billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(billingResult: BillingResult) {

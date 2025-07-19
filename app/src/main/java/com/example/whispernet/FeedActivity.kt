@@ -1,6 +1,7 @@
 package com.example.whispernet
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -115,6 +116,7 @@ class FeedActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("SetTextI18n")
     private fun setupRadiusSeekBar() {
         if (!billingManager.isPremium()) {
             binding.radiusSeekBar.isEnabled = false
