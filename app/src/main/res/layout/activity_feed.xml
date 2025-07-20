@@ -12,7 +12,7 @@
         android:id="@+id/whisperEditText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:hint="What’s on your mind? (140 chars max)"
+        android:hint="What's on your mind? (140 chars max)"
         android:maxLength="140"
         android:textColor="@android:color/white"
         android:textColorHint="@color/light_gray"
@@ -45,10 +45,10 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:max="9"
-    app:layout_constraintTop_toBottomOf="@id/themeSpinner"
-    app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintEnd_toEndOf="parent"
-    android:layout_marginTop="8dp" />
+        app:layout_constraintTop_toBottomOf="@id/themeSpinner"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="8dp" />
 
     <TextView
         android:id="@+id/radiusText"
@@ -72,15 +72,23 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="8dp" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/whisperRecyclerView"
+    <FrameLayout
+        android:id="@+id/mapContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toBottomOf="@id/postButton"
         app:layout_constraintBottom_toTopOf="@id/adView"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="16dp" />
+        android:layout_marginTop="16dp">
+
+        <fragment
+            android:id="@+id/mapFragment"
+            android:name="com.google.android.gms.maps.SupportMapFragment"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </FrameLayout>
 
     <com.google.android.gms.ads.AdView
         android:id="@+id/adView"
@@ -89,10 +97,10 @@
         android:layout_gravity="center"
         app:adSize="BANNER"
         app:adUnitId="ca-app-pub-9577412802818734/6472069262"
-    app:layout_constraintBottom_toTopOf="@id/profileButton"
-    app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintEnd_toEndOf="parent"
-    android:layout_marginBottom="8dp" />
+        app:layout_constraintBottom_toTopOf="@id/profileButton"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginBottom="8dp" />
 
     <Button
         android:id="@+id/profileButton"
