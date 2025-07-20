@@ -57,12 +57,13 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    implementation(platform("com.google.firebase:firebase-bom:33.10.0"))
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth:23.0.0")
-    implementation("com.google.android.gms:play-services-location:21.2.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("com.android.billingclient:billing-ktx:7.0.0") // For IAP
-    implementation("com.google.android.gms:play-services-ads:23.0.0") // AdMob
-    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.auth)
+    implementation(libs.play.services.location)
+    implementation(libs.androidx.recyclerview)
+    implementation("com.android.billingclient:billing-ktx:7.0.0")
+    implementation(libs.play.services.ads)
+    implementation(libs.firebase.firestore.ktx)
+    implementation(libs.play.services.maps)
 }
